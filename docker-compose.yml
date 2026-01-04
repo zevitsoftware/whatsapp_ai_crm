@@ -1,0 +1,134 @@
+version: '3.8'
+
+networks:
+  crm-network:
+    driver: bridge
+
+volumes:
+  shared_media:
+  redis_data:
+  waha_data:
+
+services:
+  # Redis Stack (with Vector Search support)
+  redis:
+    image: redis/redis-stack:latest
+    container_name: crm-redis
+    ports:
+      - "6379:6379"
+      - "8001:8001"  # RedisInsight UI
+    volumes:
+      - redis_data:/data
+    networks:
+      - crm-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  # Node.js Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm-backend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - shared_media:/app/shared_media
+    networks:
+      - crm-network
+    environment:
+      - NODE_ENV=${NODE_ENV:-development}
+      - PORT=3000
+      - DB_HOST=host.docker.internal
+      - DB_PORT=${DB_PORT:-3306}
+      - DB_NAME=${DB_NAME:-crm_marketing}
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_EXPIRES_IN=${JWT_EXPIRES_IN:-7d}
+      - OCR_SERVICE_URL=http://ocr:5000
+      - WAHA_BASE_URL=${WAHA_BASE_URL:-http://waha:3000}
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WAHA_WEBHOOK_URL=http://backend:3000/webhooks/waha
+      - WAHA_WEBHOOK_SECRET=${WAHA_WEBHOOK_SECRET}
+      - SHARED_MEDIA_PATH=/app/shared_media
+    depends_on:
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
+    command: npm run dev
+
+  # PaddleOCR Service
+  ocr:
+    build:
+      context: ./ocr
+      dockerfile: Dockerfile
+    container_name: crm-ocr
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ocr:/app
+      - shared_media:/app/shared_media
+    networks:
+      - crm-network
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SHARED_MEDIA_PATH=/app/shared_media
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # WAHA (WhatsApp HTTP API - PLUS Version)
+  waha:
+    image: devlikeapro/waha-plus:gows
+    container_name: crm-waha
+    ports:
+      - "3001:3000"
+    environment:
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      - WAHA_LOG_LEVEL=info
+      - WAHA_WEBHOOK_URL=http://backend:3000/webhooks/waha
+      - WAHA_DASHBOARD_USERNAME=${WHATSAPP_SWAGGER_USERNAME:-admin}
+      - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-admin}
+      - WAHA_API_KEY=${WAHA_API_KEY}
+      - WHATSAPP_HOOK_SECRET=${WAHA_WEBHOOK_SECRET}
+      - WHATSAPP_SWAGGER_USERNAME=${WHATSAPP_SWAGGER_USERNAME:-admin}
+      - WHATSAPP_SWAGGER_PASSWORD=${WAHA_DASHBOARD_PASSWORD:-admin}
+    volumes:
+      - waha_data:/app/.waha
+      - shared_media:/app/shared_media
+    networks:
+      - crm-network
+    restart: always
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: crm-frontend
+    ports:
+      - "8080:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - crm-network
+    environment:
+      - VITE_API_URL=http://localhost:3000/api
+    restart: always

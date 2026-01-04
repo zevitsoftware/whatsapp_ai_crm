@@ -1,0 +1,15 @@
+services:
+  ocr-test:
+    build: .
+    container_name: ocr_test_service
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./shared_media:/app/shared_media
+      - ./main.py:/app/main.py
+    networks:
+      - ocr-testing
+
+networks:
+  ocr-testing:
+    driver: bridge
