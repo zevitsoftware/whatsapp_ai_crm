@@ -124,10 +124,10 @@
     - [x] Retrieval-Augmented Generation (RAG) Query Service
     - [x] Test API Endpoint for RAG Chat
     - [x] Sales Persona Prompt Tuning with Context Injection
-  - [ ] 6.10. Frontend Chat Interface 💬 (NEXT)
-    - [ ] "Test Agent" Chat UI Component
-    - [ ] Real-time Chat with Knowledge Base
-    - [ ] Display Knowledge Base Status in UI
+  - [x] 6.10. Frontend Chat Interface 💬 (COMPLETED)
+    - [x] "Test Agent" Chat UI Component
+    - [x] Real-time Chat with Knowledge Base
+    - [x] Display Knowledge Base Status in UI
   - [x] 6.11. Device Status Syncing 🔄 (COMPLETED)
     - [x] Sync device status with WAHA when fetching devices
     - [x] Update UI to handle invalid/disconnected sessions
@@ -146,6 +146,13 @@
 - [x] **6.6 Core Infrastructure**
   - [x] Real-Time Socket.IO (QR/Progress/Chat UI)
   - [x] Subscription Management & QRIS Payment Modal
+  - [x] **PIVOT: AI-First Strategy (2026-01-05)**
+    - [x] Removed "Broadcasting" feature from UI and Subscription Plans
+    - [x] Removed "Sales Tuning/Escalation" UI to simplify UX
+    - [x] Refactored Subscription Plans (Free/Pro/Enterprise) based on AI Chunk Storage & Reply Limits
+    - [x] Enhanced Contact Auto-save from incoming messages
+    - [x] Removed "Flow Builder/Automation" UI and Routes
+    - [x] Removed "Campaign Analytics" and deprecated Marketing Dashboard widgets
 
 ### 📅 PHASE 8: Advanced Conversational Features 🗣️ (IN PROGRESS)
 
@@ -157,12 +164,52 @@
   - [x] Implement random response delay (3-7 minutes) via BullMQ
   - [x] Implement "Flood Warning" logic (Apology on every 10th message)
   - [x] Refactor `ReplyService` to use asynchronous queue workers
+- [x] **8.3 Knowledge Intelligence**
+  - [x] Implement "Knowledge Summary" tab in AI Agent UI
+  - [x] Automated AI summarization after vectorization
+  - [x] Persistence of Knowledge Summary in User profile
+  - [x] Summary refresh logic on file deletion
+- [x] **8.4 AI Personality Tuning**
+  - [x] AgentTemplate & AgentConfig models
+  - [x] Template seed data (Standard Sales Assistant)
+  - [x] Customizable AI Prompt with dynamic variable injection
+  - [x] Frontend Tuning Tab & Editor
 
-### 📅 PHASE 9: Production Deployment
+### 📅 PHASE 10: AI Refinement & Local Processing 🚀 (COMPLETED)
+
+- [x] **10.1 Docker Model Runner Integration**
+  - [x] Configure `model-runner` service in `docker-compose.yml`
+  - [x] Implement AI Provider failover logic (Online APIs -> Local Fallback)
+  - [x] Add Qwen 2.5 1.5B model support with token limits
+- [x] **10.2 Smart Identity Extraction**
+  - [x] Implement Hybrid Name/Location extraction (Regex + Local AI)
+  - [x] Fix "Stop Word" collisions (Honorifics/Location words as names)
+  - [x] Implement @lid filter for invalid WhatsApp identifiers
+- [x] **10.3 System Reliability & UI**
+  - [x] Fix Contact List Actions (Individual & Bulk Delete)
+  - [x] Implement Contact Status Toggle & Name Edit UI
+  - [x] Add Multi-turn History context to "Test Agent" Chat
+
+### 📅 PHASE 9: Production Deployment 🌐 (NEXT)
 
 - [ ] Docker Swarm/Compose orchestration
 - [ ] Cloudflare Tunnel Configuration
 - [ ] FileBrowser Volume Inspector Setup
+
+### 📅 PHASE 11: Internationalization (i18n) 🌍 (COMPLETED)
+
+- [x] **11.1 Core i18n Infrastructure**
+  - [x] Create `LanguageProvider` React Context
+  - [x] Implement `t()` translation function with parameter interpolation
+  - [x] Language persistence in localStorage (default: Indonesian)
+- [x] **11.2 Translation Files**
+  - [x] Indonesian (`id.json`) - default language
+  - [x] English (`en.json`) - secondary language
+- [x] **11.3 UI Integration**
+  - [x] Language Switcher component in header
+  - [x] Sidebar navigation translations
+  - [x] Page header translations (Contacts, AI Agent, Devices, etc.)
+  - [x] Common UI labels (Cancel, Save, Delete, etc.)
 
 ---
 

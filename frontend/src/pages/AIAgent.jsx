@@ -2,15 +2,29 @@ import { useState, useEffect, useRef } from 'react'
 import { 
   Bot, Sparkles, Database, Shield, Zap, Settings2, Plus, 
   FileText, Trash2, CheckCircle2, AlertCircle, Loader2,
-  Lock, Edit3, RefreshCw
+  Lock, Edit3, RefreshCw, Send, MessageSquare, User, ShoppingBag
 } from 'lucide-react'
 import apiClient from '../api/client'
+import ProductManager from '../components/ProductManager'
+import { useLanguage } from '../i18n/index.jsx'
 
 const AIAgent = () => {
   const [activeTab, setActiveTab] = useState('knowledge')
   const [loading, setLoading] = useState(false)
   const [knowledgeBase, setKnowledgeBase] = useState([])
+  const [knowledgeSummary, setKnowledgeSummary] = useState('')
+  const [chatMessages, setChatMessages] = useState([])
+  const [allProducts, setAllProducts] = useState([]) // For resolving product cards
+  const [chatInput, setChatInput] = useState('')
+  const [chatLoading, setChatLoading] = useState(false)
+  const chatEndRef = useRef(null)
   const fileInputRef = useRef(null)
+  
+  // Tuning State
+  const [templates, setTemplates] = useState([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [customPrompt, setCustomPrompt] = useState('')
+  const [isPromptSaving, setIsPromptSaving] = useState(false)
 
   /* Dialog State */
   const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', message: '', onConfirm: null })
@@ -27,9 +41,72 @@ const AIAgent = () => {
     setDialog(prev => ({ ...prev, isOpen: false }))
   }
 
-  const fetchKnowledgeBase = async () => {
+  // Poll for updates if any file is processing
+  useEffect(() => {
+    if (activeTab === 'knowledge') {
+       const processingFiles = knowledgeBase.some(f => f.status === 'PROCESSING')
+       if (!processingFiles) return
+   
+       const interval = setInterval(() => {
+         fetchKnowledgeBase(true)
+       }, 3000)
+   
+       return () => clearInterval(interval)
+    }
+  }, [knowledgeBase, activeTab])
+
+  useEffect(() => {
+    if (activeTab === 'tuning') {
+      fetchTemplates();
+      fetchAgentConfig();
+    }
+  }, [activeTab])
+
+  const fetchTemplates = async () => {
     try {
-      setLoading(true)
+      const response = await apiClient.get('/agent/templates');
+      setTemplates(response.data);
+    } catch (error) {
+      console.error('Failed to fetch templates:', error);
+    }
+  };
+
+  const fetchAgentConfig = async () => {
+    try {
+      const response = await apiClient.get('/agent/config');
+      if (response.data) {
+        setCustomPrompt(response.data.customPrompt);
+        setSelectedTemplateId(response.data.templateId || '');
+      }
+    } catch (error) {
+      console.error('Failed to fetch agent config:', error);
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      setIsPromptSaving(true);
+      await apiClient.post('/agent/config', {
+        templateId: selectedTemplateId,
+        customPrompt
+      });
+      showAlert('Agent personality saved successfully!');
+    } catch (error) {
+       console.error('Failed to save agent config:', error);
+       showAlert('Failed to save agent config.');
+    } finally {
+      setIsPromptSaving(false);
+    }
+  };
+
+  const handleApplyTemplate = (template) => {
+     setSelectedTemplateId(template.id);
+     setCustomPrompt(template.content);
+  };
+
+  const fetchKnowledgeBase = async (silent = false) => {
+    try {
+      if (!silent) setLoading(true)
       const response = await apiClient.get('/knowledge-base')
       const formattedData = response.data.map(file => ({
         id: file.id,
@@ -39,15 +116,80 @@ const AIAgent = () => {
         date: file.createdAt.split('T')[0]
       }))
       setKnowledgeBase(formattedData)
+      
+      // Check if we need to refresh summary (transitions from PROCESSING -> VECTORIZED)
+      const wasProcessing = knowledgeBase.some(f => f.status === 'PROCESSING');
+      const isNowProcessing = formattedData.some(f => f.status === 'PROCESSING');
+      
+      if (wasProcessing && !isNowProcessing) {
+        fetchKnowledgeSummary();
+      }
+
     } catch (error) {
       console.error('Failed to fetch knowledge base:', error)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
+    }
+  }
+
+  const fetchKnowledgeSummary = async () => {
+    try {
+      const response = await apiClient.get('/knowledge-base/summary')
+      setKnowledgeSummary(response.data.summary || '')
+    } catch (error) {
+      console.error('Failed to fetch knowledge summary:', error)
+    }
+  }
+
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault()
+    if (!chatInput.trim() || chatLoading) return
+
+    const userMessage = chatInput.trim()
+    setChatInput('')
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setChatLoading(true)
+
+    try {
+      // Build conversation history (exclude the current message we just added)
+      const history = chatMessages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }))
+
+      const response = await apiClient.post('/ai/test-chat', { 
+        message: userMessage,
+        history: history
+      })
+      
+      setChatMessages(prev => [...prev, { role: 'assistant', content: response.data.answer }])
+    } catch (error) {
+      console.error('Chat failed:', error)
+      setChatMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error answering that.', isError: true }])
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    // Scroll to bottom of chat
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages])
+
+   const fetchAllProducts = async () => {
+    try {
+      const response = await apiClient.get('/products')
+      setAllProducts(response.data)
+    } catch (error) {
+      console.error('Failed to fetch products:', error)
     }
   }
 
   useEffect(() => {
     fetchKnowledgeBase()
+    fetchKnowledgeSummary()
+    fetchAllProducts()
   }, [])
 
   const handleFileUpload = async (e) => {
@@ -121,6 +263,7 @@ const AIAgent = () => {
       }
     })
   }
+  const { t } = useLanguage()
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10 relative">
@@ -133,7 +276,7 @@ const AIAgent = () => {
                     {dialog.type === 'alert' ? <AlertCircle size={32} /> : <Bot size={32} />}
                  </div>
                  <h3 className="text-lg font-bold text-white">
-                    {dialog.type === 'alert' ? 'Notice' : 'Confirmation'}
+                    {dialog.type === 'alert' ? t('common.error') : t('common.confirm')}
                  </h3>
                  <p className="text-sm text-muted-foreground">
                     {dialog.message}
@@ -144,7 +287,7 @@ const AIAgent = () => {
                          onClick={closeDialog}
                          className="flex-1 px-4 py-2 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
                        >
-                         Cancel
+                         {t('common.cancel')}
                        </button>
                     )}
                     <button 
@@ -158,7 +301,7 @@ const AIAgent = () => {
                          : 'bg-primary hover:bg-primary/90'
                       }`}
                     >
-                      {dialog.type === 'confirm' ? 'Confirm' : 'Okay'}
+                      {dialog.type === 'confirm' ? t('common.confirm') : 'OK'}
                     </button>
                  </div>
               </div>
@@ -170,14 +313,14 @@ const AIAgent = () => {
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white flex items-center space-x-3">
             <Bot className="text-primary" />
-            <span>AI Sales Brain 🧠</span>
+            <span>{t('aiAgent.title')}</span>
           </h2>
-          <p className="text-muted-foreground mt-1">Your 10-Year Experienced Sales Expert. Trained to close and assist.</p>
+          <p className="text-muted-foreground mt-1">{t('aiAgent.subtitle')}</p>
         </div>
         <div className="flex space-x-3">
           <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
             <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-            <span>Sales Agent Active</span>
+            <span>{t('common.active')}</span>
           </div>
         </div>
       </header>
@@ -185,8 +328,11 @@ const AIAgent = () => {
       {/* Tabs */}
       <div className="flex space-x-1 p-1 bg-card border border-border rounded-xl w-fit">
         {[
-          { id: 'knowledge', label: 'Knowledge Base', icon: Database },
-          { id: 'config', label: 'Sales Tuning', icon: Settings2 },
+          { id: 'knowledge', label: t('aiAgent.tabs.knowledgeBase'), icon: Database },
+          { id: 'summary', label: t('aiAgent.tabs.knowledgeSummary'), icon: Sparkles },
+          { id: 'products', label: t('aiAgent.tabs.productCatalog'), icon: ShoppingBag },
+          { id: 'tuning', label: t('aiAgent.tabs.agentTuning'), icon: Settings2 },
+          { id: 'test', label: t('aiAgent.tabs.testAgent'), icon: MessageSquare },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -203,38 +349,198 @@ const AIAgent = () => {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Forms/Lists */}
-        <div className="lg:col-span-2 space-y-6">
-          {activeTab === 'config' && (
-            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl">
+      <div className="grid grid-cols-1 gap-8">
+        {/* Main Content Area */}
+        <div className="space-y-6">
+
+          {activeTab === 'products' && (
+             <ProductManager />
+          )}
+          {activeTab === 'tuning' && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+               {/* Template List */}
+               <div className="md:col-span-1 space-y-4">
+                  <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl p-6">
+                     <h3 className="text-lg font-bold text-white flex items-center space-x-2 mb-4">
+                        <Edit3 size={18} className="text-primary" />
+                        <span>Core Templates</span>
+                     </h3>
+                     <div className="space-y-3">
+                        {templates.length > 0 ? (
+                           templates.map(tpl => (
+                              <button
+                                 key={tpl.id}
+                                 onClick={() => handleApplyTemplate(tpl)}
+                                 className={`w-full text-left p-4 rounded-xl border transition-all ${
+                                    selectedTemplateId === tpl.id 
+                                    ? 'bg-primary/10 border-primary ring-1 ring-primary' 
+                                    : 'bg-muted/20 border-border hover:border-white/20'
+                                 }`}
+                              >
+                                 <div className="font-bold text-sm text-white mb-1">{tpl.name}</div>
+                                 <div className="text-[10px] text-muted-foreground line-clamp-2">{tpl.description}</div>
+                                 <div className="mt-2 text-[9px] font-black uppercase tracking-wider text-primary/80">{tpl.category}</div>
+                              </button>
+                           ))
+                        ) : (
+                           <div className="text-center py-10 opacity-30">
+                              <Bot size={32} className="mx-auto mb-2" />
+                              <p className="text-[10px] font-bold uppercase">No templates found</p>
+                           </div>
+                        )}
+                     </div>
+                  </div>
+                  
+                  <div className="bg-indigo-600/10 border border-indigo-500/20 rounded-2xl p-6">
+                     <h4 className="text-indigo-400 font-bold text-xs uppercase mb-2">Editor Tip</h4>
+                     <p className="text-[10px] text-indigo-300/80 leading-relaxed">
+                        Use variables like <code className="bg-black/20 px-1 rounded text-white font-mono">{`\${contactName}`}</code> and <code className="bg-black/20 px-1 rounded text-white font-mono">{`\${contactLocation}`}</code> to personalize your bot's greetings dynamically!
+                     </p>
+                  </div>
+               </div>
+
+               {/* Editor Area */}
+               <div className="md:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-xl flex flex-col h-[75vh]">
+                  <div className="p-6 border-b border-border bg-muted/30 flex justify-between items-center">
+                     <div>
+                        <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                           <Zap size={18} className="text-primary" />
+                           <span>Sales Personality Tuning</span>
+                        </h3>
+                        <p className="text-[10px] text-muted-foreground font-bold uppercase mt-1">Directly control how your AI thinks and sells</p>
+                     </div>
+                     <button
+                        onClick={handleSaveConfig}
+                        disabled={isPromptSaving || !customPrompt.trim()}
+                        className="bg-primary text-primary-foreground px-6 py-2 rounded-xl flex items-center space-x-2 font-bold hover:opacity-90 transition-all disabled:opacity-50"
+                     >
+                        {isPromptSaving ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
+                        <span>Save Sales Personality</span>
+                     </button>
+                  </div>
+                  <div className="flex-1 p-0 relative group">
+                     <textarea
+                        value={customPrompt}
+                        onChange={(e) => setCustomPrompt(e.target.value)}
+                        placeholder="Define your agent's personality and rules here..."
+                        className="w-full h-full bg-transparent p-8 text-sm text-white/90 font-mono leading-relaxed resize-none outline-none focus:bg-white/[0.02] transition-colors"
+                     />
+                     <div className="absolute bottom-4 right-4 pointer-events-none text-white/10 group-focus-within:text-primary/20 transition-colors">
+                        <Edit3 size={120} />
+                     </div>
+                  </div>
+               </div>
+            </div>
+          )}
+
+          {activeTab === 'test' && (
+            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl h-[75vh] flex flex-col">
               <div className="p-6 border-b border-border bg-muted/30">
-                <h3 className="text-lg font-bold text-white flex items-center space-x-2">
-                  <Sparkles size={18} className="text-primary" />
-                  <span>Expert Sales Tuning</span>
-                </h3>
+                 <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                    <MessageSquare size={18} className="text-primary" />
+                    <span>Test Your Agent</span>
+                 </h3>
+                 <p className="text-xs text-muted-foreground mt-1">Chat with your trained agent to verify its knowledge and responses.</p>
               </div>
-              <div className="p-8 space-y-8">
-                <div className="bg-primary/5 border border-primary/20 p-8 rounded-2xl relative">
-                  <div className="absolute top-4 right-4 text-primary opacity-20"><Bot size={48} /></div>
-                  <h4 className="text-xs font-black text-primary uppercase tracking-widest mb-3">Active Sales Strategy</h4>
-                  <p className="text-2xl font-black text-white leading-tight mb-4">Master Sales Strategist</p>
-                  <div className="space-y-4">
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      Your agent is operating with a **10-Year Experience Professional Persona**. It is hard-coded to prioritize lead conversion while maintaining high rapport with customers.
-                    </p>
-                    <div className="grid grid-cols-2 gap-4 pt-4 border-t border-primary/10">
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Technique</p>
-                          <p className="text-xs font-bold text-white uppercase">Consultative Selling</p>
-                       </div>
-                       <div className="space-y-1">
-                          <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Objective</p>
-                          <p className="text-xs font-bold text-white uppercase">High Conversion</p>
+              
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                 {chatMessages.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center opacity-40 space-y-4">
+                       <Bot size={48} className="text-primary" />
+                       <div>
+                          <p className="font-bold text-white">Ready to Chat</p>
+                          <p className="text-xs text-muted-foreground max-w-xs mx-auto">Ask questions about your uploaded documents to test the RAG (Retrieval Augmented Generation) capabilities.</p>
                        </div>
                     </div>
-                  </div>
-                </div>
+                 ) : (
+                    chatMessages.map((msg, idx) => (
+                       <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                          <div className={`flex max-w-[80%] space-x-3 ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'}`}>
+                             <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                                msg.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted border border-border text-white'
+                             }`}>
+                                {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+                             </div>
+                              <div className={`p-4 rounded-2xl text-sm leading-relaxed ${
+                                 msg.role === 'user' 
+                                 ? 'bg-primary text-primary-foreground rounded-tr-sm' 
+                                 : msg.isError 
+                                    ? 'bg-destructive/10 text-destructive border border-destructive/20 rounded-tl-sm'
+                                    : 'bg-muted/50 border border-border text-white rounded-tl-sm'
+                              }`}>
+                                 {msg.content.split(/(\[PRODUCT_CARD: [a-f0-9-]+\])/g).map((part, pIdx) => {
+                                    const match = part.match(/\[PRODUCT_CARD: ([a-f0-9-]+)\]/)
+                                    if (match) {
+                                       const productId = match[1]
+                                       const product = allProducts.find(p => p.id === productId)
+                                       if (!product) return null
+
+                                       const rootUrl = (import.meta.env.VITE_API_URL || 'http://localhost:3000/api').replace(/\/api$/, '')
+
+                                       return (
+                                          <div key={pIdx} className="my-3 max-w-[280px] bg-black/40 border border-white/10 rounded-xl overflow-hidden shadow-2xl">
+                                             <div className="h-32 bg-muted relative">
+                                                <img 
+                                                   src={`${rootUrl}${product.imagePath}`} 
+                                                   alt={product.title}
+                                                   className="w-full h-full object-cover"
+                                                   onError={(e) => { e.target.src = 'https://placehold.co/400x300/1e1e1e/white?text=No+Image' }}
+                                                />
+                                                {product.isPrimary && (
+                                                   <div className="absolute top-2 left-2 bg-indigo-600 text-[8px] font-black uppercase px-2 py-1 rounded-md shadow-lg text-white">
+                                                      Featured
+                                                   </div>
+                                                )}
+                                             </div>
+                                             <div className="p-3 space-y-1">
+                                                <h4 className="font-bold text-white text-xs truncate">{product.title}</h4>
+                                                <p className="text-primary font-black text-sm">Rp {Number(product.price).toLocaleString('id-ID')}</p>
+                                                <p className="text-[10px] text-white/40 line-clamp-2 leading-tight">{product.description}</p>
+                                             </div>
+                                          </div>
+                                       )
+                                    }
+                                    return <span key={pIdx} className="whitespace-pre-wrap">{part}</span>
+                                 })}
+                              </div>
+                          </div>
+                       </div>
+                    ))
+                 )}
+                 {chatLoading && (
+                    <div className="flex justify-start">
+                       <div className="flex space-x-3">
+                          <div className="w-8 h-8 rounded-full bg-muted border border-border flex items-center justify-center shrink-0 text-white">
+                             <Bot size={16} />
+                          </div>
+                          <div className="bg-muted/30 border border-border px-4 py-3 rounded-2xl rounded-tl-sm flex items-center space-x-2">
+                             <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                             <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                             <div className="w-2 h-2 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
+                       </div>
+                    </div>
+                 )}
+                 <div ref={chatEndRef} />
+              </div>
+
+              <div className="p-4 border-t border-border bg-card">
+                 <form onSubmit={handleSendMessage} className="flex space-x-2">
+                    <input 
+                       type="text" 
+                       value={chatInput}
+                       onChange={e => setChatInput(e.target.value)}
+                       placeholder="Type your message here..."
+                       className="flex-1 bg-muted/50 border border-border rounded-xl px-4 py-3 text-white placeholder:text-muted-foreground outline-none focus:ring-2 focus:ring-primary/50 transition-all font-medium"
+                    />
+                    <button 
+                       type="submit" 
+                       disabled={!chatInput.trim() || chatLoading}
+                       className="bg-primary text-primary-foreground p-3 rounded-xl hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    >
+                       <Send size={20} />
+                    </button>
+                 </form>
               </div>
             </div>
           )}
@@ -329,54 +635,68 @@ const AIAgent = () => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Right Column: Summaries/States */}
-        <div className="space-y-6">
-          <div className="bg-gradient-to-br from-primary/20 to-indigo-500/20 border border-primary/20 rounded-2xl p-8 relative overflow-hidden group shadow-2xl">
-            <div className="relative z-10">
-              <h3 className="text-xl font-bold text-white flex items-center space-x-2">
-                <Shield size={20} className="text-primary" />
-                <span>Escalation Protocol</span>
-              </h3>
-              <p className="text-sm text-muted-foreground mt-3 leading-relaxed">
-                The Sales Brain handles initial inquiry and qualification. If a high-value lead is detected, a human notification is triggered.
-              </p>
-              <div className="mt-6 flex items-center space-x-3 text-[11px] text-emerald-400 font-black bg-emerald-500/10 w-fit px-3 py-1.5 rounded-lg border border-emerald-500/20 tracking-widest">
-                <CheckCircle2 size={14} />
-                <span>94% LEAD ACCURACY</span>
+          
+          {activeTab === 'summary' && (
+            <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-xl min-h-[500px] flex flex-col">
+              <div className="p-6 border-b border-border bg-muted/30 flex justify-between items-center">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center space-x-2">
+                    <Sparkles size={18} className="text-primary" />
+                    <span>AI Knowledge Summary</span>
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground font-bold uppercase mt-1">What the AI actually understands from your data</p>
+                </div>
+                <button 
+                  onClick={fetchKnowledgeSummary}
+                  className="p-2 text-muted-foreground hover:text-primary transition-colors"
+                  title="Refresh Summary"
+                >
+                  <RefreshCw size={16} />
+                </button>
+              </div>
+              <div className="p-8 flex-1">
+                {knowledgeSummary ? (
+                  <div className="prose prose-invert max-w-none">
+                    <div className="bg-muted/20 border border-border/50 rounded-xl p-6 whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+                      {knowledgeSummary}
+                    </div>
+                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                       <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
+                          <h4 className="text-xs font-black text-primary uppercase mb-2">Confidence Level</h4>
+                          <div className="flex items-center space-x-2">
+                             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-primary" style={{ width: '92%' }}></div>
+                             </div>
+                             <span className="text-[10px] font-bold text-white">92%</span>
+                          </div>
+                       </div>
+                       <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                          <h4 className="text-xs font-black text-emerald-500 uppercase mb-2">Context Strength</h4>
+                          <div className="flex items-center space-x-2">
+                             <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                                <div className="h-full bg-emerald-500" style={{ width: '85%' }}></div>
+                             </div>
+                             <span className="text-[10px] font-bold text-white">High</span>
+                          </div>
+                       </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center space-y-4 py-20">
+                    <div className="p-4 rounded-full bg-muted/20 text-muted-foreground">
+                      <FileText size={40} />
+                    </div>
+                    <div>
+                      <h4 className="text-white font-bold">No Summary Available</h4>
+                      <p className="text-sm text-muted-foreground max-w-xs mx-auto mt-2">
+                        Upload and vectorize your training data first. The AI will automatically summarize it for you.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
-            {/* Decal icon */}
-            <Bot size={100} className="absolute bottom-[-30px] right-[-30px] text-white/5 group-hover:scale-110 transition-transform duration-700" />
-          </div>
-
-          <div className="bg-card border border-border rounded-2xl p-6 shadow-xl relative overflow-hidden">
-             <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xs font-black text-muted-foreground uppercase tracking-widest opacity-60">Sales Performance</h3>
-                <RefreshCw size={14} className="text-muted-foreground hover:rotate-180 transition-all duration-500 cursor-pointer" />
-             </div>
-             <div className="space-y-6">
-                <div>
-                  <div className="flex justify-between text-xs mb-2">
-                    <span className="text-muted-foreground font-medium">Conversations Handled</span>
-                    <span className="text-white font-black">1.2K / 5K</span>
-                  </div>
-                  <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
-                    <div className="bg-primary h-full shadow-[0_0_8px_rgba(139,92,246,0.5)]" style={{ width: '24%' }}></div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-2">
-                    <span className="text-muted-foreground font-medium">Auto-Reply Success</span>
-                    <span className="text-white font-black">98% / 100%</span>
-                  </div>
-                  <div className="w-full bg-muted h-1 rounded-full overflow-hidden">
-                    <div className="bg-indigo-400 h-full shadow-[0_0_8px_rgba(129,140,248,0.5)]" style={{ width: '98%' }}></div>
-                  </div>
-                </div>
-             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

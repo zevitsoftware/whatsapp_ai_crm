@@ -1,4 +1,4 @@
-const { AutoReply, Device, AiProvider } = require('../models');
+const { AutoReply, Device, AiProvider, ChatLog } = require('../models');
 const { Op } = require('sequelize');
 const spintaxService = require('./spintax.service');
 const wahaService = require('./waha.service');
@@ -32,17 +32,41 @@ class ReplyService {
           phone: from.split('@')[0]
         });
 
+        // Log User Message
+        await ChatLog.create({
+          userId,
+          deviceId: device.id,
+          chatId,
+          role: 'user',
+          message: incomingText
+        });
+
         await wahaService.sendSeen(session, chatId);
         await wahaService.startTyping(session, chatId);
         await new Promise(resolve => setTimeout(resolve, 2000));
         await wahaService.stopTyping(session, chatId);
         await wahaService.sendText(session, { chatId, text: finalMessage });
+
+        // Log Assistant Message
+        await ChatLog.create({
+          userId,
+          deviceId: device.id,
+          chatId,
+          role: 'assistant',
+          message: finalMessage
+        });
+
         return;
       }
 
-      // 2. Schedule AI Response with 3-7 min Delay
+      // 2. Schedule AI Response
+      // On DEV: 3 seconds loop
+      // On PROD: 3-7 minutes random delay
       const replyQueue = require('./reply.queue');
-      const delayMs = Math.floor(Math.random() * (420000 - 180000 + 1)) + 180000;
+      const isDev = process.env.NODE_ENV === 'development';
+      const delayMs = isDev 
+        ? 3000 
+        : Math.floor(Math.random() * (420000 - 180000 + 1)) + 180000;
       
       await replyQueue.add('delayed-reply', 
         { session, payload, delayMs },

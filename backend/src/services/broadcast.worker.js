@@ -17,7 +17,14 @@ class BroadcastWorker {
         host: process.env.REDIS_HOST || 'redis',
         port: process.env.REDIS_PORT || 6379
       },
-      concurrency: 5 // Process 5 messages concurrently
+      concurrency: 5, // Process 5 messages concurrently
+      removeOnComplete: {
+        age: 7200, // Keep completed jobs for 2 hours
+        count: 500  // Keep max 500 completed jobs
+      },
+      removeOnFail: {
+        age: 86400  // Keep failed jobs for 24 hours
+      }
     });
 
     this.worker.on('completed', (job) => {

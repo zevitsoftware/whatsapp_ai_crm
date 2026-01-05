@@ -7,7 +7,16 @@ const dayjs = require('dayjs');
 
 // Queue for scheduled tasks
 const schedulerQueue = new Queue('scheduler-tasks', {
-  connection: redisConfig
+  connection: redisConfig,
+  defaultJobOptions: {
+    removeOnComplete: {
+      age: 86400, // Keep completed jobs for 1 day
+      count: 200   // Keep max 200 completed jobs
+    },
+    removeOnFail: {
+      age: 172800  // Keep failed jobs for 2 days
+    }
+  }
 });
 
 /**
@@ -43,6 +52,16 @@ exports.initScheduler = async () => {
       }
     );
 
+    // 5. Add Vector Archival (Daily at 2 AM)
+    await schedulerQueue.add(
+      'archive-vectors',
+      {},
+      {
+        repeat: { pattern: '0 2 * * *' }, // Every day at 2 AM
+        jobId: 'archive-vectors'
+      }
+    );
+
     console.log('✅ Scheduler Service initialized with 3 repeatable jobs');
   } catch (error) {
     console.error('❌ Scheduler Initialization Error:', error);
@@ -67,6 +86,9 @@ exports.processScheduledTask = async (job) => {
       break;
     case 'check-pending-kb':
       await handlePendingKnowledgeBase();
+      break;
+    case 'archive-vectors':
+      await handleVectorArchival();
       break;
     default:
       console.warn(`ℹ️  Unknown scheduled task: ${name}`);
@@ -132,5 +154,21 @@ async function handlePendingKnowledgeBase() {
     }
   } catch (error) {
     console.error('❌ Pending KB Check Error:', error);
+  }
+}
+
+/**
+ * Archive old vectors from Redis to MySQL
+ */
+async function handleVectorArchival() {
+  try {
+    const vectorService = require('./vector.service');
+    const vectorArchiveService = require('./vector.archive.service');
+    
+    const archivedCount = await vectorArchiveService.archiveOldVectors(vectorService);
+    
+    console.log(`✅ Vector archival complete. Archived ${archivedCount} files.`);
+  } catch (error) {
+    console.error('❌ Vector Archival Error:', error);
   }
 }

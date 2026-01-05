@@ -56,6 +56,10 @@ module.exports = (sequelize, DataTypes) => {
     subscriptionExpiresAt: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    knowledgeSummary: {
+      type: DataTypes.TEXT,
+      allowNull: true
     }
   }, {
     sequelize,

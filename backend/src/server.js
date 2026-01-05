@@ -17,8 +17,8 @@ async function startServer() {
     
     // Sync models (creates tables if they don't exist)
     if (process.env.NODE_ENV === 'development') {
-      console.log('🔄 Syncing database models...');
-      await db.sequelize.sync({ alter: true });
+      console.log('🔄 Syncing database models (alter: false)...');
+      await db.sequelize.sync({ alter: false });
     }
     
     console.log('✅ Database connected and synced successfully');

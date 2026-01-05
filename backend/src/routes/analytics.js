@@ -6,5 +6,6 @@ const authMiddleware = require('../middlewares/auth.middleware');
 router.use(authMiddleware);
 
 router.get('/overview', analyticsController.getOverview);
+router.get('/recent-messages', analyticsController.getRecentMessages);
 
 module.exports = router;

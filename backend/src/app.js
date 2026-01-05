@@ -11,56 +11,36 @@ dotenv.config();
 
 const app = express();
 
-// Middleware
-app.use(helmet());
+// 1. Enhanced Logger (Place near top to catch all)
+app.use((req, res, next) => {
+  if (req.originalUrl === '/health') return next();
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} ${res.statusCode} (${duration}ms)`);
+  });
+  next();
+});
+
+// 2. Standard Middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+      "img-src": ["'self'", "data:", "https:", "*"],
+    },
+  },
+}));
 app.use(cors());
 app.use(apiLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Enhanced Request/Response Logger
-app.use((req, res, next) => {
-  const start = Date.now();
-  const { method, originalUrl, body, query } = req;
+// 3. Static Files
+app.use('/shared_media', express.static('/app/shared_media'));
 
-  // Track the original res.json to capture response data
-  const originalJson = res.json;
-  let responseData;
-  res.json = function (body) {
-    responseData = body;
-    return originalJson.call(this, body);
-  };
-
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const timestamp = new Date().toISOString();
-    
-    console.log(`\n[${timestamp}] ${method} ${originalUrl} ${res.statusCode} (${duration}ms)`);
-    
-    if (Object.keys(query).length > 0) {
-      console.log('  Query:', JSON.stringify(query));
-    }
-    
-    if (method !== 'GET' && body && Object.keys(body).length > 0) {
-      const logBody = { ...body };
-      if (logBody.password) logBody.password = '********';
-      console.log('  Request Body:', JSON.stringify(logBody));
-    }
-
-    if (responseData) {
-      const logResponse = { ...responseData };
-      if (logResponse.token) logResponse.token = '[REDACTED]';
-      const responseStr = JSON.stringify(logResponse);
-      const truncated = responseStr.length > 500 ? responseStr.substring(0, 500) + '...' : responseStr;
-      console.log('  Response Body:', truncated);
-    }
-    console.log('--------------------------------------------------');
-  });
-
-  next();
-});
-
-// Health check endpoint
+// 4. Health Check
 app.get('/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -74,7 +54,6 @@ app.get('/health', (req, res) => {
 const authRoutes = require('./routes/auth');
 const deviceRoutes = require('./routes/device');
 const contactRoutes = require('./routes/contact');
-const campaignRoutes = require('./routes/campaign');
 const autoReplyRoutes = require('./routes/auto_reply');
 const aiProviderRoutes = require('./routes/ai_provider');
 const aiRoutes = require('./routes/ai.routes');
@@ -84,6 +63,7 @@ const ocrRoutes = require('./routes/ocr');
 const analyticsRoutes = require('./routes/analytics');
 const webhookRoutes = require('./routes/webhooks');
 const knowledgeBaseRoutes = require('./routes/knowledge_base');
+const locationRoutes = require('./routes/location');
 
 // API Routes
 app.get('/api', (req, res) => {
@@ -95,7 +75,6 @@ app.get('/api', (req, res) => {
       auth: '/api/auth',
       devices: '/api/devices',
       contacts: '/api/contacts',
-      campaigns: '/api/campaigns',
       auto_replies: '/api/auto-replies',
       ai_providers: '/api/ai-providers',
       link_rotators: '/api/links',
@@ -111,7 +90,7 @@ app.get('/api', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/contacts', contactRoutes);
-app.use('/api/campaigns', campaignRoutes);
+
 app.use('/api/auto-replies', autoReplyRoutes);
 app.use('/api/ai-providers', aiProviderRoutes);
 app.use('/api/ai', aiRoutes);
@@ -121,6 +100,9 @@ app.use('/api/ocr', ocrRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/webhooks', webhookRoutes);
 app.use('/api/knowledge-base', knowledgeBaseRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/products', require('./routes/product'));
+app.use('/api/agent', require('./routes/agent'));
 
 // Swagger Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

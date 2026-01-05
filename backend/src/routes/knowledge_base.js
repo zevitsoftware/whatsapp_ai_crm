@@ -35,6 +35,7 @@ const upload = multer({
 router.use(authMiddleware);
 
 router.get('/', knowledgeBaseController.list);
+router.get('/summary', knowledgeBaseController.getSummary);
 router.post('/upload', upload.single('file'), knowledgeBaseController.upload);
 router.delete('/:id', knowledgeBaseController.delete);
 

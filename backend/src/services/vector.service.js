@@ -9,7 +9,7 @@ class VectorService {
   constructor() {
     this.embedder = null;
     this.redisClient = null;
-    this.indexName = 'kb_vectors';
+    this.indexName = 'kb_vectors_v3'; // Upgraded index version for category support
     this.vectorDimension = 384; // all-MiniLM-L6-v2 produces 384-dim vectors
     this.isReady = false;
   }
@@ -74,6 +74,7 @@ class VectorService {
         'SCHEMA',
         'userId', 'TAG',
         'fileId', 'TAG',
+        'category', 'TAG',
         'fileName', 'TEXT',
         'chunkIndex', 'NUMERIC',
         'text', 'TEXT',
@@ -150,18 +151,64 @@ class VectorService {
    * @param {string} params.fileName - Original file name
    * @param {string} params.text - Full extracted text
    */
-  async storeDocument({ userId, fileId, fileName, text }) {
+  /**
+   * Get total number of chunks for a user in a specific category
+   * @param {string} userId
+   * @param {string} category - 'document' or 'product'
+   */
+  async getUserChunkCount(userId, category = 'document') {
+    if (!this.isReady) await this.initialize();
+    
+    try {
+      const escapedUserId = userId.replace(/-/g, '\\-');
+      const queryStr = `@userId:{${escapedUserId}} @category:{${category}}`;
+      
+      // Use FT.SEARCH with LIMIT 0 0 to get just the count (results[0])
+      const results = await this.redisClient.sendCommand([
+        'FT.SEARCH',
+        this.indexName,
+        queryStr,
+        'LIMIT', '0', '0'
+      ]);
+      
+      return results[0] || 0;
+    } catch (error) {
+      console.error('[VectorService] getUserChunkCount failed:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Store document chunks with embeddings in Redis
+   * @param {Object} params
+   * @param {string} params.userId - User ID
+   * @param {string} params.fileId - File ID from KnowledgeBase
+   * @param {string} params.fileName - Original file name
+   * @param {string} params.text - Full extracted text
+   * @param {string} params.category - Storage category ('document' or 'product')
+   * @param {number} params.maxChunks - Optional limit override (Default: 7 chunks ~ 5600 chars)
+   */
+  async storeDocument({ userId, fileId, fileName, text, category = 'document', maxChunks = 7 }) {
     if (!this.isReady) {
       await this.initialize();
     }
 
-    console.log(`[VectorService] Processing document: ${fileName}`);
+    const label = category === 'product' ? 'Product' : 'Document';
+    console.log(`[VectorService] Processing ${label}: ${fileName}`);
     
     // 1. Chunk the text
     const chunks = this.chunkText(text);
     console.log(`[VectorService] Created ${chunks.length} chunks`);
 
-    // 2. Generate embeddings and store each chunk
+    // 2. CHECK LIMITS
+    const currentCount = await this.getUserChunkCount(userId, category);
+    if (currentCount + chunks.length > maxChunks) {
+      const maxChars = maxChunks * 800;
+      const typeLabel = category === 'product' ? 'Product Catalog' : 'General Knowledge Base';
+      throw new Error(`Storage Limit Exceeded: Your ${typeLabel} allows approx ${maxChars} characters (${maxChunks} chunks). Adding this would exceed your limit. Please delete old ${category === 'product' ? 'products' : 'documents'}.`);
+    }
+
+    // 3. Generate embeddings and store each chunk
     const pipeline = this.redisClient.multi();
     
     for (let i = 0; i < chunks.length; i++) {
@@ -175,6 +222,7 @@ class VectorService {
       pipeline.hSet(key, {
         userId,
         fileId,
+        category,
         fileName,
         chunkIndex: i.toString(),
         text: chunk,
@@ -185,7 +233,7 @@ class VectorService {
     await pipeline.exec();
     console.log(`[VectorService] ✅ Stored ${chunks.length} vectors for ${fileName}`);
     
-    return { chunksStored: chunks.length };
+    return { chunksStored: chunks.length, totalChunks: currentCount + chunks.length };
   }
 
   /**
@@ -270,6 +318,40 @@ class VectorService {
     } catch (error) {
       console.error('[VectorService] Delete failed:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get all text chunks for a user
+   * @param {string} userId
+   */
+  async getAllTexts(userId) {
+    if (!this.isReady) await this.initialize();
+    
+    try {
+      // Escape dashes in UUID for RediSearch TAG query
+      const escapedUserId = userId.replace(/-/g, '\\-');
+      const queryStr = `@userId:{${escapedUserId}}`;
+      
+      const results = await this.redisClient.sendCommand([
+        'FT.SEARCH',
+        this.indexName,
+        queryStr,
+        'RETURN', '1', 'text',
+        'LIMIT', '0', '100' // Limit to top 100 chunks for summary
+      ]);
+      
+      const matches = [];
+      for (let i = 1; i < results.length; i += 2) {
+        const fields = results[i + 1];
+        if (fields && fields.length > 1 && fields[0] === 'text') {
+            matches.push(fields[1]);
+        }
+      }
+      return matches;
+    } catch (error) {
+      console.error('[VectorService] getAllTexts failed:', error);
+      return [];
     }
   }
 

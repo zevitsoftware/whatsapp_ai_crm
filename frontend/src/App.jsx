@@ -7,11 +7,13 @@ import {
 } from 'lucide-react'
 import useAuthStore from './store/useAuthStore'
 import apiClient from './api/client'
+import LanguageSwitcher from './components/LanguageSwitcher'
+import { useLanguage } from './i18n/index.jsx'
 
 // Pages
 import AIAgent from './pages/AIAgent'
 import Contacts from './pages/Contacts'
-import FlowBuilder from './pages/FlowBuilder'
+
 import Analytics from './pages/Analytics'
 import Devices from './pages/Devices'
 import Subscriptions from './pages/Subscriptions'
@@ -50,11 +52,8 @@ const Dashboard = () => {
           </h2>
           <p className="text-muted-foreground mt-1">Real-time pulse of your automated marketing machine.</p>
         </div>
-        <button className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-semibold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center space-x-2">
-          <Plus size={18} />
-          <span>Create Campaign</span>
-        </button>
       </header>
+
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 relative">
@@ -90,19 +89,8 @@ const Dashboard = () => {
       </div>
 
       {/* Main Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-card border border-border rounded-2xl p-8 min-h-[400px]">
-          <h3 className="text-xl font-bold mb-6 text-white flex items-center space-x-2">
-             <PieChart size={20} className="text-primary" />
-             <span>Broadcast Distribution</span>
-          </h3>
-          <div className="flex items-center justify-center h-64 text-muted-foreground border-2 border-dashed border-border rounded-2xl group transition-colors hover:border-primary/20">
-            <div className="text-center group-hover:scale-105 transition-transform">
-               <PieChart size={32} className="mx-auto mb-2 opacity-20" />
-               <p className="text-sm font-medium">Monthly Campaign Trends</p>
-            </div>
-          </div>
-        </div>
+      <div className="grid grid-cols-1 gap-8">
+        
         <div className="bg-card border border-border rounded-2xl p-6">
           <h3 className="text-xl font-bold mb-6 text-white">Recent Activities</h3>
           <div className="space-y-6">
@@ -243,16 +231,17 @@ const AppLayout = ({ children }) => {
   const { logout, user } = useAuthStore()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const location = useLocation()
+  const { t } = useLanguage()
 
   const sidebarItems = [
-    { id: 'dashboard', icon: Layout, label: 'Dashboard', path: '/' },
-    { id: 'devices', icon: Smartphone, label: 'Connections', path: '/devices' },
-    { id: 'ai-agent', icon: Bot, label: 'AI Agent', path: '/ai-agent' },
-    { id: 'contacts', icon: Users, label: 'Contacts', path: '/contacts' },
-    { id: 'automation', icon: GitBranch, label: 'Automation', path: '/automation' },
-    { id: 'analytics', icon: PieChart, label: 'Analytics', path: '/analytics' },
-    { id: 'subscriptions', icon: CreditCard, label: 'Subscriptions', path: '/subscriptions' },
-    { id: 'settings', icon: Settings, label: 'Settings', path: '/settings' },
+    { id: 'dashboard', icon: Layout, label: t('navigation.dashboard'), path: '/' },
+    { id: 'devices', icon: Smartphone, label: t('navigation.devices'), path: '/devices' },
+    { id: 'ai-agent', icon: Bot, label: t('navigation.aiAgent'), path: '/ai-agent' },
+    { id: 'contacts', icon: Users, label: t('navigation.contacts'), path: '/contacts' },
+
+    { id: 'analytics', icon: PieChart, label: t('navigation.analytics'), path: '/analytics' },
+    { id: 'subscriptions', icon: CreditCard, label: t('navigation.subscriptions'), path: '/subscriptions' },
+    { id: 'settings', icon: Settings, label: t('navigation.settings'), path: '/settings' },
   ]
 
   return (
@@ -320,6 +309,7 @@ const AppLayout = ({ children }) => {
           </div>
           
           <div className="flex items-center space-x-8">
+            <LanguageSwitcher compact />
             <button className="p-3 rounded-2xl bg-muted/30 hover:bg-muted transition-all relative group border border-border">
               <Bell size={20} className="text-muted-foreground group-hover:text-foreground" />
               <span className="absolute top-3 right-3 w-2.5 h-2.5 bg-primary rounded-full border-2 border-background animate-pulse"></span>
@@ -392,7 +382,6 @@ function App() {
                 <Route path="/devices" element={<Devices />} />
                 <Route path="/ai-agent" element={<AIAgent />} />
                 <Route path="/contacts" element={<Contacts />} />
-                <Route path="/automation" element={<FlowBuilder />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/subscriptions" element={<Subscriptions />} />
                 <Route path="/settings" element={<div className="text-white text-3xl font-black italic opacity-10 flex h-full items-center justify-center uppercase tracking-[20px]">Construction</div>} />

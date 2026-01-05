@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import apiClient from '../api/client'
 import useAuthStore from '../store/useAuthStore'
+import { useLanguage } from '../i18n/index.jsx'
 
 const Subscriptions = () => {
   const { user } = useAuthStore()
@@ -70,15 +71,17 @@ const Subscriptions = () => {
     }
   }
 
+  const { t } = useLanguage()
+
   return (
     <div className="space-y-12 animate-in fade-in duration-500 pb-20">
       <header className="flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white flex items-center space-x-3">
             <CreditCard className="text-primary" />
-            <span>Growth & Billing 💸</span>
+            <span>{t('subscriptions.title')}</span>
           </h2>
-          <p className="text-muted-foreground mt-1">Scale your reach with premium automation features.</p>
+          <p className="text-muted-foreground mt-1">{t('subscriptions.subtitle')}</p>
         </div>
         <div className="flex space-x-2 bg-card border border-border p-1.5 rounded-2xl">
            <button className="px-4 py-2 text-xs font-bold text-white bg-primary rounded-xl shadow-lg">Monthly</button>

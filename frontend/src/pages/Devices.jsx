@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react'
 import { 
   Smartphone, Plus, RefreshCw, CheckCircle2, 
   AlertCircle, Trash2, X, Loader2, QrCode, 
-  Wifi, WifiOff, ShieldCheck, Zap, Eye, EyeOff
+  Wifi, WifiOff, ShieldCheck, Zap, Eye, EyeOff, MessageSquare
 } from 'lucide-react'
 import apiClient from '../api/client'
+import { useLanguage } from '../i18n/index.jsx'
 
 const Devices = () => {
   const [devices, setDevices] = useState([])
@@ -16,16 +17,46 @@ const Devices = () => {
   const [alias, setAlias] = useState('')
   const [stats, setStats] = useState({ totalMessages: 0, health: 'UNKNOWN' })
 
+  /* Dialog State */
+  const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', title: '', message: '', onConfirm: null })
+
+  const showAlert = (title, message) => {
+    setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: null })
+  }
+
+  const showConfirm = (title, message, onConfirm) => {
+    setDialog({ isOpen: true, type: 'confirm', title, message, onConfirm })
+  }
+
+  const closeDialog = () => {
+    setDialog(prev => ({ ...prev, isOpen: false }))
+  }
+
+  // Recent messages state
+  const [recentMessages, setRecentMessages] = useState([])
+
   const fetchStats = async () => {
     try {
-      const [analyticsRes, healthRes] = await Promise.all([
-        apiClient.get('/analytics/overview'),
-        fetch(apiClient.defaults.baseURL.replace('/api', '') + '/health') 
-      ]);
+      const analyticsRes = await apiClient.get('/analytics/overview');
+      
+      // Try to check health via the API
+      let healthStatus = 'HEALTHY';
+      try {
+        const healthRes = await fetch(apiClient.defaults.baseURL.replace('/api', '') + '/health');
+        healthStatus = healthRes.ok ? 'HEALTHY' : 'DEGRADED';
+      } catch {
+        // If fetch fails (CORS or network), try via apiClient
+        try {
+          await apiClient.get('/health');
+          healthStatus = 'HEALTHY';
+        } catch {
+          healthStatus = 'DEGRADED';
+        }
+      }
       
       setStats({
         totalMessages: analyticsRes.data.summary.totalMessages || 0,
-        health: healthRes.ok ? 'HEALTHY' : 'DEGRADED'
+        health: healthStatus
       });
     } catch (error) {
        console.error('Failed to fetch stats:', error);
@@ -33,9 +64,38 @@ const Devices = () => {
     }
   };
 
+  const fetchRecentMessages = async (deviceList) => {
+    try {
+      // Fetch recent chat logs
+      const res = await apiClient.get('/analytics/recent-messages');
+      const messages = res.data.messages || [];
+      
+      // Group messages by device/session
+      const grouped = {};
+      deviceList.forEach(d => {
+        grouped[d.id] = messages.filter(m => m.session === d.id).slice(0, 3);
+      });
+      setRecentMessages(grouped);
+    } catch (error) {
+      console.error('Failed to fetch recent messages:', error);
+    }
+  };
+
   useEffect(() => {
     fetchStats()
+    fetchRecentMessagesGlobal()
   }, [])
+
+  // Fetch recent messages globally (not per device)
+  const fetchRecentMessagesGlobal = async () => {
+    try {
+      const res = await apiClient.get('/analytics/recent-messages');
+      const messages = res.data.messages || [];
+      setRecentMessages(messages);
+    } catch (error) {
+      console.error('Failed to fetch recent messages:', error);
+    }
+  };
 
   const fetchDevices = async () => {
     setLoading(true)
@@ -107,13 +167,19 @@ const Devices = () => {
     }
   }
 
-  const handleDelete = async (id) => {
-    if (!confirm('Are you sure you want to disconnect and delete this device?')) return
+  const handleDelete = (id) => {
+    showConfirm('Delete Device', 'Are you sure you want to disconnect and delete this device? This will stop all automation for this account.', () => performDelete(id))
+  }
+
+  const performDelete = async (id) => {
     try {
       await apiClient.delete(`/devices/${id}`)
       setDevices(devices.filter(d => d.id !== id))
+      closeDialog()
     } catch (error) {
       console.error('Failed to delete device:', error)
+      closeDialog()
+      showAlert(t('common.error'), t('common.error'))
     }
   }
 
@@ -124,22 +190,24 @@ const Devices = () => {
     fetchDevices() // Refresh list after closing QR modal
   }
 
+  const { t } = useLanguage()
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-10">
       <header className="flex justify-between items-end">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white flex items-center space-x-3">
             <Smartphone className="text-primary" />
-            <span>Connection Hub 🌐</span>
+            <span>{t('devices.title')}</span>
           </h2>
-          <p className="text-muted-foreground mt-1">Manage your WhatsApp sessions and multi-device connections.</p>
+          <p className="text-muted-foreground mt-1">{t('devices.subtitle')}</p>
         </div>
         <button 
            onClick={() => setIsModalOpen(true)}
            className="bg-primary text-primary-foreground px-6 py-2.5 rounded-xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center space-x-2"
         >
           <Plus size={18} />
-          <span>Connect New Device</span>
+          <span>{t('devices.addDevice')}</span>
         </button>
       </header>
 
@@ -147,7 +215,7 @@ const Devices = () => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
          <div className="bg-card border border-border p-6 rounded-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Wifi size={48} /></div>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Sessions</p>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{t('devices.activeSessions')}</p>
             <h3 className="text-3xl font-bold text-white mt-2">
               {devices.filter(d => d.status === 'CONNECTED' || d.status === 'WORKING').length} 
               <span className="text-xs text-muted-foreground font-medium">/ {devices.length}</span>
@@ -155,7 +223,7 @@ const Devices = () => {
          </div>
          <div className="bg-card border border-border p-6 rounded-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity"><Zap size={48} /></div>
-            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Total Messages Handled</p>
+            <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">{t('devices.totalMessages')}</p>
             <h3 className="text-3xl font-bold text-emerald-400 mt-2">
                {stats.totalMessages >= 1000 ? `${(stats.totalMessages / 1000).toFixed(1)}k` : stats.totalMessages}
             </h3>
@@ -169,9 +237,8 @@ const Devices = () => {
             </h3>
          </div>
       </div>
-
-      {/* Device Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 relative min-h-[400px]">
+      {/* Device List - Slim Rows */}
+      <div className="space-y-3 relative min-h-[200px]">
         {loading && (
           <div className="absolute inset-0 bg-background/50 backdrop-blur-[2px] z-10 flex items-center justify-center rounded-2xl">
             <Loader2 className="animate-spin text-primary" size={40} />
@@ -179,72 +246,97 @@ const Devices = () => {
         )}
 
         {devices.length > 0 ? (
-          devices.map((device) => (
-            <div key={device.id} className="bg-card border border-border rounded-2xl p-6 hover:border-primary/50 transition-all group shadow-sm relative overflow-hidden">
-              <div className={`absolute top-0 left-0 w-1 h-full ${
-                device.status === 'CONNECTED' || device.status === 'WORKING' ? 'bg-emerald-500' : 
-                device.status === 'DISCONNECTED' ? 'bg-red-500' : 'bg-amber-500 animate-pulse'
-              }`}></div>
-              <div className="flex justify-between items-start mb-6">
-                <div className="flex items-center space-x-4">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center border ${
-                    device.status === 'CONNECTED' || device.status === 'WORKING' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-muted/50 border-border text-muted-foreground'
-                  }`}>
-                    <Smartphone size={24} />
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-white">{device.metadata?.alias || 'Unnamed Device'}</h4>
-                    <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">ID: {device.id.split('-')[0]}...</p>
-                  </div>
-                </div>
-                <div className={`px-2 py-1 rounded-lg text-[10px] font-black ${
-                  device.status === 'CONNECTED' || device.status === 'WORKING' ? 'bg-emerald-500/10 text-emerald-500' : 
-                  device.status === 'DISCONNECTED' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                  'bg-muted/50 text-muted-foreground border border-border'
+          devices.map((device, idx) => {
+            // Find the most recent message for this specific device
+            const latestMsg = recentMessages.find(m => m.deviceId === device.id);
+            
+            return (
+              <div key={device.id} className="bg-card border border-border rounded-xl px-4 py-3 hover:border-primary/50 transition-all group relative overflow-hidden flex items-center">
+                {/* Status indicator bar */}
+                <div className={`absolute left-0 top-0 w-1 h-full ${
+                  device.status === 'CONNECTED' || device.status === 'WORKING' ? 'bg-emerald-500' : 
+                  device.status === 'DISCONNECTED' ? 'bg-red-500' : 'bg-amber-500 animate-pulse'
+                }`}></div>
+                
+                {/* Device Icon */}
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center border shrink-0 ml-2 ${
+                  device.status === 'CONNECTED' || device.status === 'WORKING' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+                    : 'bg-muted/50 border-border text-muted-foreground'
                 }`}>
-                  {device.status === 'DISCONNECTED' ? 'RECONNECT REQUIRED' : device.status}
+                  <Smartphone size={20} />
                 </div>
-              </div>
+                
+                {/* Device Info */}
+                <div className="ml-4 min-w-[180px]">
+                  <div className="flex items-center space-x-2">
+                    <h4 className="font-bold text-white text-sm">{device.metadata?.alias || 'Unnamed Device'}</h4>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
+                      device.status === 'CONNECTED' || device.status === 'WORKING' ? 'bg-emerald-500/10 text-emerald-500' : 
+                      device.status === 'DISCONNECTED' ? 'bg-red-500/10 text-red-500' : 'bg-muted/50 text-muted-foreground'
+                    }`}>
+                      {device.status}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {device.updatedAt ? new Date(device.updatedAt).toLocaleTimeString() : 'Never synced'}
+                  </p>
+                </div>
 
-              <div className="space-y-4 mb-6">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Last Sync</span>
-                  <span className="text-white font-medium">{device.updatedAt ? new Date(device.updatedAt).toLocaleTimeString() : 'Never'}</span>
+                {/* Latest Message Preview (on right) */}
+                <div className="flex-1 mx-4 min-w-0">
+                  {latestMsg ? (
+                    <div className="flex items-center space-x-3 p-2 rounded-lg bg-muted/20 border border-border/30">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xs shrink-0">
+                        {latestMsg.contactName?.charAt(0)?.toUpperCase() || '?'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-semibold text-white truncate">{latestMsg.contactName}</p>
+                          <span className="text-[9px] text-muted-foreground ml-2 shrink-0">
+                            {latestMsg.createdAt && !isNaN(new Date(latestMsg.createdAt)) 
+                              ? new Date(latestMsg.createdAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                              : ''}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-muted-foreground truncate">{latestMsg.message}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-muted-foreground/50 italic">
+                      {device.status === 'CONNECTED' || device.status === 'WORKING' ? 'Waiting for messages...' : ''}
+                    </div>
+                  )}
                 </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Session Quality</span>
-                  <span className={`${device.status === 'CONNECTED' || device.status === 'WORKING' ? 'text-emerald-400' : 'text-muted-foreground'} font-bold`}>
-                    {device.status === 'CONNECTED' || device.status === 'WORKING' ? 'EXCELLENT' : 'OFFLINE'}
-                  </span>
-                </div>
-              </div>
 
-              <div className="flex space-x-2 mt-2">
-                {device.status !== 'CONNECTED' && device.status !== 'WORKING' && (
+                {/* Actions */}
+                <div className="flex items-center space-x-2 shrink-0">
+                  {device.status !== 'CONNECTED' && device.status !== 'WORKING' && (
+                    <button 
+                      onClick={() => { setSelectedDevice(device); setIsModalOpen(true); fetchQr(device.id); }}
+                      className="bg-primary text-primary-foreground px-3 py-1.5 rounded-lg text-xs font-bold hover:opacity-90 transition-all flex items-center space-x-1"
+                    >
+                      <QrCode size={12} />
+                      <span>Connect</span>
+                    </button>
+                  )}
                   <button 
-                    onClick={() => { setSelectedDevice(device); setIsModalOpen(true); fetchQr(device.id); }}
-                    className="flex-1 bg-primary text-primary-foreground py-2 rounded-xl text-xs font-bold hover:opacity-90 transition-all flex items-center justify-center space-x-2"
+                    onClick={() => handleDelete(device.id)}
+                    className="p-1.5 rounded-lg border border-destructive/20 text-destructive/50 hover:text-destructive hover:bg-destructive/10 transition-all"
                   >
-                    <QrCode size={14} />
-                    <span>{device.status === 'SCAN_QR' ? 'Show QR Code' : 'Reconnect Device'}</span>
+                    <Trash2 size={14} />
                   </button>
-                )}
-                <button 
-                  onClick={() => handleDelete(device.id)}
-                  className="p-2 rounded-xl border border-destructive/20 text-destructive/50 hover:text-destructive hover:bg-destructive/10 transition-all"
-                >
-                  <Trash2 size={16} />
-                </button>
+                </div>
               </div>
-            </div>
-          ))
+            );
+          })
         ) : !loading && (
-          <div className="col-span-full py-20 bg-card border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center">
-             <div className="w-16 h-16 bg-muted rounded-2xl flex items-center justify-center mb-4 opacity-20">
-                <WifiOff size={32} />
+          <div className="py-16 bg-card border border-dashed border-border rounded-2xl flex flex-col items-center justify-center text-center">
+             <div className="w-14 h-14 bg-muted rounded-2xl flex items-center justify-center mb-4 opacity-20">
+                <WifiOff size={28} />
              </div>
-             <h3 className="text-xl font-bold text-white mb-2">No Active Connections</h3>
-             <p className="text-muted-foreground text-sm max-w-xs">Link your first WhatsApp account to start automating your marketing flows.</p>
+             <h3 className="text-lg font-bold text-white mb-2">No Active Connections</h3>
+             <p className="text-muted-foreground text-sm max-w-xs">Link your first WhatsApp account to start automating.</p>
           </div>
         )}
       </div>
@@ -343,6 +435,47 @@ const Devices = () => {
                </form>
              )}
           </div>
+        </div>
+      )}
+      {/* Custom Dialog Overlay */}
+      {dialog.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200">
+           <div className="bg-card border border-border rounded-xl shadow-2xl max-w-sm w-full p-6 animate-in zoom-in-95 duration-200">
+              <div className="flex flex-col items-center text-center space-y-4">
+                 <div className={`p-3 rounded-full ${dialog.type === 'alert' ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                    {dialog.type === 'alert' ? <AlertCircle size={32} /> : <Trash2 size={32} />}
+                 </div>
+                 <h3 className="text-lg font-bold text-white">
+                    {dialog.title}
+                 </h3>
+                 <p className="text-sm text-muted-foreground">
+                    {dialog.message}
+                 </p>
+                 <div className="flex space-x-3 w-full pt-2">
+                    {dialog.type === 'confirm' && (
+                       <button 
+                         onClick={closeDialog}
+                         className="flex-1 px-4 py-2 rounded-xl border border-border text-sm font-medium text-muted-foreground hover:bg-muted transition-colors"
+                       >
+                         Cancel
+                       </button>
+                    )}
+                    <button 
+                      onClick={() => {
+                        if (dialog.onConfirm) dialog.onConfirm()
+                        else closeDialog()
+                      }}
+                      className={`flex-1 px-4 py-2 rounded-xl text-sm font-bold text-white transition-all ${
+                         dialog.type === 'alert' 
+                         ? 'bg-primary hover:bg-primary/90' 
+                         : 'bg-destructive hover:bg-destructive/90'
+                      }`}
+                    >
+                      {dialog.type === 'confirm' ? 'Delete' : 'Okay'}
+                    </button>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
     </div>

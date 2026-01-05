@@ -92,7 +92,28 @@ async function handleIncomingMessage(payload, session) {
       return;
     }
 
-    // 2. Atomic Deduplication check using Redis SET NX
+    // 2. Handle LID (Local Identifier) mapping
+    let senderId = from;
+    if (from.endsWith('@lid')) {
+      // Try to get the real number from _data
+      const realId = payload._data?.key?.remoteJidAlt || payload._data?.key?.remoteJid;
+      
+      if (realId && realId.includes('@')) {
+        // Convert to common format (usually @s.whatsapp.net -> @c.us for internal consistency)
+        senderId = realId.replace('@s.whatsapp.net', '@c.us');
+        console.log(`🔄 Mapped LID ${from} -> ${senderId}`);
+      } else {
+        console.log(`⚠️  Could not map LID ${from} to real number. Using LID as ID.`);
+      }
+    } else if (!from.endsWith('@c.us')) {
+       // Allow group messages (@g.us) potentially, but for now log warning if not c.us/lid
+       console.log(`⚠️  Message from unusual source (not @c.us or @lid): ${from}`);
+    }
+    
+    // Update the 'from' in payload to the real ID so downstream services use the correct number
+    payload.from = senderId;
+
+    // 3. Atomic Deduplication check using Redis SET NX
     if (id) {
       const lockKey = `msg_lock:${id}`;
       // SET with NX (Only if Not Exists) and EX (Expiration)

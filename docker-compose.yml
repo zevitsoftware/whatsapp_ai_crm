@@ -36,6 +36,10 @@ services:
     container_name: crm-backend
     ports:
       - "3000:3000"
+    models:
+      llm:
+        endpoint_var: LOCAL_AI_URL
+        model_var: LOCAL_AI_MODEL
     volumes:
       - ./backend:/app
       - /app/node_modules
@@ -132,3 +136,7 @@ services:
     environment:
       - VITE_API_URL=http://localhost:3000/api
     restart: always
+
+models:
+  ai/qwen2.5:3b:
+    image: ai/qwen2.5:3b

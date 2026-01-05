@@ -218,6 +218,24 @@ class WahaService {
   }
 
   /**
+   * Send Image/File Message
+   */
+  async sendImage(sessionName, params) {
+    // params: { chatId, file: { data, mimetype, filename, url }, caption }
+    try {
+      const response = await this.client.post('/api/sendImage', {
+        session: sessionName,
+        chatId: params.chatId,
+        file: params.file, // Object containing { data, mimetype, filename } or { url, ... }
+        caption: params.caption
+      });
+      return response.data;
+    } catch (error) {
+      this.handleError(error);
+    }
+  }
+
+  /**
    * Set Chat Seen status
    */
   async sendSeen(sessionName, chatId) {

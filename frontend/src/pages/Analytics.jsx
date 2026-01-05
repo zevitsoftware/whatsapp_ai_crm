@@ -5,6 +5,7 @@ import {
   CheckCircle2, AlertCircle, Clock, Shield
 } from 'lucide-react'
 import apiClient from '../api/client'
+import { useLanguage } from '../i18n/index.jsx'
 
 const Analytics = () => {
   const [data, setData] = useState(null)
@@ -31,15 +32,17 @@ const Analytics = () => {
   const delivered = logStats.find(l => l.status === 'DELIVERED')?.count || 0
   const deliveryRate = totalSent > 0 ? ((delivered / totalSent) * 100).toFixed(1) : '0'
 
+  const { t } = useLanguage()
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-20">
       <header className="flex flex-col md:flex-row justify-between items-start md:items-end space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-white flex items-center space-x-3">
             <BarChart3 className="text-primary" />
-            <span>Campaign Analytics 📊</span>
+            <span>{t('analytics.title')}</span>
           </h2>
-          <p className="text-muted-foreground mt-1">Deep insights into your message delivery and engagement rates.</p>
+          <p className="text-muted-foreground mt-1">{t('analytics.subtitle')}</p>
         </div>
         <div className="flex space-x-3 w-full md:w-auto">
           <button 
@@ -47,11 +50,11 @@ const Analytics = () => {
             className="flex-1 md:flex-none flex items-center justify-center space-x-2 px-4 py-2.5 bg-muted text-white rounded-xl border border-border hover:bg-muted/80 transition-all font-bold text-sm"
           >
             <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-            <span>Refresh</span>
+            <span>{t('common.loading').replace('...', '')}</span>
           </button>
           <button className="flex-1 md:flex-none flex items-center justify-center space-x-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all text-sm">
             <Download size={18} />
-            <span>Export Report</span>
+            <span>Export</span>
           </button>
         </div>
       </header>
@@ -67,7 +70,7 @@ const Analytics = () => {
          {[
            { label: 'Total Messages', value: totalSent.toLocaleString(), icon: MessageSquare, color: 'text-primary' },
            { label: 'Delivery Rate', value: `${deliveryRate}%`, icon: CheckCircle2, color: 'text-emerald-400' },
-           { label: 'Active Campaigns', value: data?.summary?.activeCampaigns || 0, icon: TrendingUp, color: 'text-indigo-400' },
+           { label: 'Active Chats', value: data?.summary?.activeCampaigns || 0, icon: TrendingUp, color: 'text-indigo-400' },
            { label: 'Avg Engagement', value: '72.4%', icon: Users, color: 'text-amber-400' },
          ].map((stat, i) => (
            <div key={i} className="bg-card border border-border p-6 rounded-2xl relative overflow-hidden group hover:border-primary/30 transition-all">

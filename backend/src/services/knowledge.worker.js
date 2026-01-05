@@ -66,7 +66,8 @@ const knowledgeWorker = new Worker('knowledge-base-tasks', async (job) => {
       userId: file.userId,
       fileId: file.id,
       fileName: file.originalName,
-      text: extractedText
+      text: extractedText,
+      category: file.metadata?.category || 'document'
     });
 
     // 4. Update model with processing results
@@ -82,6 +83,40 @@ const knowledgeWorker = new Worker('knowledge-base-tasks', async (job) => {
     });
 
     console.log(`[KnowledgeWorker] ✅ Successfully vectorized: ${file.originalName} (${vectorResult.chunksStored} chunks)`);
+    
+    // 5. Update Knowledge Summary for the user (ONLY for general documents)
+    try {
+      if (file.metadata?.category !== 'product') {
+        console.log(`[KnowledgeWorker] Updating overall knowledge summary for user: ${file.userId}`);
+        const allTexts = await vectorService.getAllTexts(file.userId);
+        if (allTexts.length > 0) {
+          const aiService = require('./ai.service');
+          await aiService.generateKnowledgeSummary(file.userId, allTexts);
+          console.log(`[KnowledgeWorker] ✅ Knowledge summary updated for user: ${file.userId}`);
+        }
+      } else {
+        console.log(`[KnowledgeWorker] skipping summary for product: ${file.originalName}`);
+      }
+    } catch (summaryError) {
+      console.error(`[KnowledgeWorker] Failed to update summary:`, summaryError.message);
+      // Don't fail the whole job if only summary fails
+    }
+
+    // 6. Notify Frontend via Socket.IO
+    try {
+      const { getIO } = require('./socket.service');
+      const io = getIO();
+      // Emit event to notify the specific user's frontend
+      io.emit('knowledge_update', { 
+        userId: file.userId,
+        fileId: file.id,
+        status: 'VECTORIZED',
+        summaryUpdated: true
+      });
+      console.log(`[KnowledgeWorker] 📡 Emitted knowledge_update event for user: ${file.userId}`);
+    } catch (socketError) {
+      console.warn('[KnowledgeWorker] Failed to emit socket event (Socket.IO might not be ready yet):', socketError.message);
+    }
 
   } catch (error) {
     console.error(`[KnowledgeWorker] Error processing ${fileId}:`, error);

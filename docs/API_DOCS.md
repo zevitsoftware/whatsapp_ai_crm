@@ -82,6 +82,76 @@ Get profile of logged-in user.
   }
   ```
 
+## 🤖 Agent Tuning
+
+Manage the AI personality templates and user-specific "Sales Brain" configurations.
+
+### List AI Templates
+
+Fetch all available personality templates.
+
+- **URL**: `/agent/templates`
+- **Method**: `GET`
+- **Headers**: `Authorization: Bearer <token>`
+- **Success Response (200)**:
+
+  ```json
+  [
+    {
+      "id": "uuid",
+      "name": "Standard Sales Assistant",
+      "content": "Full template content...",
+      "description": "Template description",
+      "category": "Sales"
+    }
+  ]
+  ```
+
+### Get Agent Config
+
+Fetch the current user's active "Sales Brain" configuration.
+
+- **URL**: `/agent/config`
+- **Method**: `GET`
+- **Headers**: `Authorization: Bearer <token>`
+- **Success Response (200)**:
+
+  ```json
+  {
+    "id": "uuid",
+    "userId": "uuid",
+    "templateId": "uuid",
+    "customPrompt": "Your customized sales guidelines here...",
+    "isActive": true
+  }
+  ```
+
+### Save Agent Config
+
+Update or create the user's custom "Sales Brain" prompt.
+
+- **URL**: `/agent/config`
+- **Method**: `POST`
+- **Headers**: `Authorization: Bearer <token>`
+- **Body**:
+
+  ```json
+  {
+    "templateId": "uuid",
+    "customPrompt": "The full customized prompt text",
+    "isActive": true
+  }
+  ```
+
+- **Success Response (200)**:
+
+  ```json
+  {
+    "message": "Agent configuration saved successfully",
+    "config": { ... }
+  }
+  ```
+
 ## Device Management
 
 ### List Devices
@@ -528,9 +598,6 @@ The public URL that performs the rotation and redirect.
 - **URL**: `/api/links/r/:slug`
 - **Method**: `GET`
 - **Action**: Redirects to `https://wa.me/<target>?text=<message>`
-
- 
- 
 
 ## Knowledge Base Management
 
